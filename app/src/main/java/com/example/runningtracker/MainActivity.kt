@@ -1,8 +1,10 @@
 package com.example.runningtracker.ui.main
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -27,6 +29,7 @@ import androidx.core.content.ContextCompat
 import com.example.runningtracker.R
 import com.example.runningtracker.data.database.RunDatabase
 import com.example.runningtracker.data.model.Run
+import com.example.runningtracker.service.TrackingService
 import com.example.runningtracker.ui.history.RunHistoryActivity
 import com.example.runningtracker.ui.statistics.StatisticsActivity
 import com.example.runningtracker.utils.Constants
@@ -70,6 +73,12 @@ class MainActivity : AppCompatActivity() {
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
         override fun onProviderDisabled(provider: String) {}
+    }
+
+    private val locationUpdateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            updateUI()
+        }
     }
 
     private lateinit var db: RunDatabase
@@ -154,14 +163,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        locationManager.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER,
-            1000,
-            5f,
-            locationListener
-        )
-
-        initStepCounter()
+        val intent = Intent(this, TrackingService::class.java)
+        startService(intent)
 
         isTracking = true
         startTime = System.currentTimeMillis()
@@ -173,6 +176,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopTracking() {
+        val intent = Intent(this, TrackingService::class.java)
+        stopService(intent)
+
         locationManager.removeUpdates(locationListener)
 
         stepSensor?.let {
@@ -297,5 +303,15 @@ class MainActivity : AppCompatActivity() {
         tvTime.startAnimation(fadeOut)
         tvMaxSpeed.startAnimation(fadeOut)
         tvAvgSpeed.startAnimation(fadeOut)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        registerReceiver(locationUpdateReceiver, IntentFilter("LOCATION_UPDATE"), Context.RECEIVER_NOT_EXPORTED)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterReceiver(locationUpdateReceiver)
     }
 }
