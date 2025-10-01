@@ -4,15 +4,23 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.widget.Button
+import android.view.animation.Animation
+import android.view.animation.AnimationUtils
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -20,7 +28,10 @@ import com.example.runningtracker.R
 import com.example.runningtracker.data.database.RunDatabase
 import com.example.runningtracker.data.model.Run
 import com.example.runningtracker.ui.history.RunHistoryActivity
+import com.example.runningtracker.ui.statistics.StatisticsActivity
 import com.example.runningtracker.utils.Constants
+import com.example.runningtracker.utils.HybridDistanceCalculator
+import com.google.android.material.card.MaterialCardView
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
@@ -28,28 +39,28 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvDistance: TextView
     private lateinit var tvTime: TextView
     private lateinit var tvCalories: TextView
-    private lateinit var btnStart: Button
-    private lateinit var btnStop: Button
-    private lateinit var btnSave: Button
-    private lateinit var btnHistory: Button
+    private lateinit var btnStart: MaterialCardView
+    private lateinit var btnStop: MaterialCardView
+    private lateinit var btnSave: MaterialCardView
+    private lateinit var btnHistory: MaterialCardView
+    private lateinit var btnStats: MaterialCardView
+    private lateinit var btnResetTracker: MaterialCardView
 
     private lateinit var locationManager: LocationManager
     private var isTracking = false
-    private var totalDistance = 0.0
     private var startTime = 0L
     private var calories = 0
     private val weight = 70f // вес в кг
 
-    private val locationListener = object : LocationListener {
-        private var lastLocation: Location? = null
+    private var stepCount = 0
+    private var stepSensor: Sensor? = null
+    private var stepCounter: SensorEventListener? = null
+    private lateinit var hybridCalculator: HybridDistanceCalculator
 
+    private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            lastLocation?.let { oldLocation ->
-                val distanceInMeters = oldLocation.distanceTo(location)
-                totalDistance += distanceInMeters / 1000.0 // в км
-                updateUI()
-            }
-            lastLocation = location
+            hybridCalculator.addGpsLocation(location)
+            updateUI()
         }
 
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
@@ -66,12 +77,43 @@ class MainActivity : AppCompatActivity() {
         initViews()
         db = RunDatabase(this)
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        hybridCalculator = HybridDistanceCalculator(stepLength = 0.75)
 
-        btnStart.setOnClickListener { startTracking() }
-        btnStop.setOnClickListener { stopTracking() }
-        btnSave.setOnClickListener { saveRun() }
+        // Анимации кнопок
+        btnStart.setOnClickListener {
+            val pressAnim = AnimationUtils.loadAnimation(this, R.anim.button_press)
+            btnStart.startAnimation(pressAnim)
+            startTracking()
+        }
+
+        btnStop.setOnClickListener {
+            val pressAnim = AnimationUtils.loadAnimation(this, R.anim.button_press)
+            btnStop.startAnimation(pressAnim)
+            stopTracking()
+        }
+
+        btnSave.setOnClickListener {
+            val pressAnim = AnimationUtils.loadAnimation(this, R.anim.button_press)
+            btnSave.startAnimation(pressAnim)
+            saveRun()
+        }
+
         btnHistory.setOnClickListener {
+            val pressAnim = AnimationUtils.loadAnimation(this, R.anim.button_press)
+            btnHistory.startAnimation(pressAnim)
             startActivity(Intent(this, RunHistoryActivity::class.java))
+        }
+
+        btnStats.setOnClickListener {
+            val pressAnim = AnimationUtils.loadAnimation(this, R.anim.button_press)
+            btnStats.startAnimation(pressAnim)
+            startActivity(Intent(this, StatisticsActivity::class.java))
+        }
+
+        btnResetTracker.setOnClickListener {
+            val pressAnim = AnimationUtils.loadAnimation(this, R.anim.button_press)
+            btnResetTracker.startAnimation(pressAnim)
+            resetTracker()
         }
     }
 
@@ -83,8 +125,17 @@ class MainActivity : AppCompatActivity() {
         btnStop = findViewById(R.id.btnStop)
         btnSave = findViewById(R.id.btnSave)
         btnHistory = findViewById(R.id.btnHistory)
+        btnStats = findViewById(R.id.btnStats)
+        btnResetTracker = findViewById(R.id.btnResetTracker)
 
-        btnSave.isEnabled = false
+        // Отключаем кнопку "Сохранить" по умолчанию
+        setButtonEnabled(btnSave, false)
+    }
+
+    private fun setButtonEnabled(cardView: MaterialCardView, enabled: Boolean) {
+        cardView.isEnabled = enabled
+        val alpha = if (enabled) 1.0f else 0.5f
+        cardView.alpha = alpha
     }
 
     private fun startTracking() {
@@ -105,23 +156,55 @@ class MainActivity : AppCompatActivity() {
             locationListener
         )
 
+        initStepCounter()
+
         isTracking = true
         startTime = System.currentTimeMillis()
-        btnStart.isEnabled = false
-        btnStop.isEnabled = true
+        setButtonEnabled(btnStart, false)
+        setButtonEnabled(btnStop, true)
+        setButtonEnabled(btnSave, false)
+
         startTimer()
     }
 
     private fun stopTracking() {
         locationManager.removeUpdates(locationListener)
+
+        stepSensor?.let {
+            val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            sensorManager.unregisterListener(stepCounter, it)
+        }
+
         isTracking = false
-        btnStart.isEnabled = true
-        btnStop.isEnabled = false
-        btnSave.isEnabled = true
+        setButtonEnabled(btnStart, true)
+        setButtonEnabled(btnStop, false)
+        setButtonEnabled(btnSave, true)
+    }
+
+    private fun initStepCounter() {
+        val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+
+        stepCounter = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event != null) {
+                    val newStepCount = event.values[0].toInt()
+                    hybridCalculator.updateSteps(newStepCount)
+                    updateUI()
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        stepSensor?.let {
+            sensorManager.registerListener(stepCounter, it, SensorManager.SENSOR_DELAY_UI)
+        }
     }
 
     private fun updateUI() {
-        tvDistance.text = "Дистанция: %.2f км".format(totalDistance)
+        val distance = hybridCalculator.getTotalDistance()
+        tvDistance.text = "Дистанция: %.2f км".format(distance)
 
         val elapsed = System.currentTimeMillis() - startTime
         val seconds = (elapsed / 1000).toInt()
@@ -130,9 +213,10 @@ class MainActivity : AppCompatActivity() {
         val sec = seconds % 60
         val min = minutes % 60
 
-        tvTime.text = "Время: %02d:%02d:%02d".format(hours, min, sec)
+        val timeStr = "Время: %02d:%02d:%02d".format(hours, min, sec)
+        tvTime.text = timeStr
 
-        calories = (totalDistance * Constants.CALORIES_PER_KM).roundToInt()
+        calories = (distance * Constants.CALORIES_PER_KM).roundToInt()
         tvCalories.text = "Калории: $calories"
     }
 
@@ -151,12 +235,46 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveRun() {
         val run = Run(
-            distance = totalDistance,
+            distance = hybridCalculator.getTotalDistance(),
             time = tvTime.text.toString().substring(6),
             calories = calories
         )
         db.addRun(run)
 
         Toast.makeText(this, "Пробежка сохранена", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun resetTracker() {
+        if (isTracking) {
+            Toast.makeText(this, "Нельзя сбросить во время трекинга", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Анимация исчезновения
+        val fadeOut = AnimationUtils.loadAnimation(this, R.anim.fade_out_fast)
+
+        fadeOut.setAnimationListener(object : Animation.AnimationListener {
+            override fun onAnimationStart(animation: Animation?) {}
+
+            override fun onAnimationEnd(animation: Animation?) {
+                // Обнуляем значения
+                hybridCalculator.reset()
+                startTime = 0L
+                calories = 0
+                updateUI()
+
+                // Анимация появления
+                val fadeIn = AnimationUtils.loadAnimation(this@MainActivity, R.anim.fade_in_fast)
+                tvDistance.startAnimation(fadeIn)
+                tvTime.startAnimation(fadeIn)
+                tvCalories.startAnimation(fadeIn)
+            }
+
+            override fun onAnimationRepeat(animation: Animation?) {}
+        })
+
+        tvDistance.startAnimation(fadeOut)
+        tvTime.startAnimation(fadeOut)
+        tvCalories.startAnimation(fadeOut)
     }
 }

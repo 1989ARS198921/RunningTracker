@@ -13,8 +13,11 @@
             android:name=".ui.history.RunHistoryActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.statistics.StatisticsActivity"
+            android:exported="false" /> <!-- ✅ Добавлено -->
+        <activity
             android:name=".ui.main.MainActivity"
-            android:exported="true"> <!-- ✅ Правильный путь -->
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -16,9 +16,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") } // ✅ Правильно: uri() и двойные кавычки
     }
 }
 
 rootProject.name = "RunningTracker"
 include(":app")
- 
