@@ -43,7 +43,7 @@
                 android:id="@+id/tvDistance"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Дистанция: 0.00 км"
+                android:text="Диста: 00 км 000 м"
                 android:textSize="22sp"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface"
@@ -60,12 +60,20 @@
                 android:layout_marginBottom="8dp" />
 
             <TextView
-                android:id="@+id/tvCalories"
+                android:id="@+id/tvMaxSpeed"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Калории: 0"
-                android:textSize="22sp"
-                android:textStyle="bold"
+                android:text="Макс: 00 км/ч"
+                android:textSize="18sp"
+                android:textColor="?attr/colorOnSurface"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvAvgSpeed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Сред: 00 км/ч"
+                android:textSize="18sp"
                 android:textColor="?attr/colorOnSurface" />
 
         </LinearLayout>

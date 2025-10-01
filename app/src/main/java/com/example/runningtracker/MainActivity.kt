@@ -38,7 +38,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var tvDistance: TextView
     private lateinit var tvTime: TextView
-    private lateinit var tvCalories: TextView
+    private lateinit var tvMaxSpeed: TextView
+    private lateinit var tvAvgSpeed: TextView
     private lateinit var btnStart: MaterialCardView
     private lateinit var btnStop: MaterialCardView
     private lateinit var btnSave: MaterialCardView
@@ -50,6 +51,9 @@ class MainActivity : AppCompatActivity() {
     private var isTracking = false
     private var startTime = 0L
     private var calories = 0
+    private var totalDistance = 0.0
+    private var maxSpeed = 0.0
+    private var avgSpeed = 0.0
     private val weight = 70f // вес в кг
 
     private var stepCount = 0
@@ -120,7 +124,8 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         tvDistance = findViewById(R.id.tvDistance)
         tvTime = findViewById(R.id.tvTime)
-        tvCalories = findViewById(R.id.tvCalories)
+        tvMaxSpeed = findViewById(R.id.tvMaxSpeed)
+        tvAvgSpeed = findViewById(R.id.tvAvgSpeed)
         btnStart = findViewById(R.id.btnStart)
         btnStop = findViewById(R.id.btnStop)
         btnSave = findViewById(R.id.btnSave)
@@ -179,6 +184,9 @@ class MainActivity : AppCompatActivity() {
         setButtonEnabled(btnStart, true)
         setButtonEnabled(btnStop, false)
         setButtonEnabled(btnSave, true)
+
+        // Обновим UI один раз после остановки
+        updateUI()
     }
 
     private fun initStepCounter() {
@@ -204,7 +212,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         val distance = hybridCalculator.getTotalDistance()
-        tvDistance.text = "Дистанция: %.2f км".format(distance)
+        val distanceKm = (distance * 1000).toInt() // в метрах
+        val km = distanceKm / 1000
+        val meters = distanceKm % 1000
+        tvDistance.text = "Диста: %02d км %03d м".format(km, meters)
 
         val elapsed = System.currentTimeMillis() - startTime
         val seconds = (elapsed / 1000).toInt()
@@ -217,7 +228,13 @@ class MainActivity : AppCompatActivity() {
         tvTime.text = timeStr
 
         calories = (distance * Constants.CALORIES_PER_KM).roundToInt()
-        tvCalories.text = "Калории: $calories"
+
+        // Рассчитаем скорости (примерно)
+        if (elapsed > 0) {
+            avgSpeed = distance / (elapsed / 1000.0 / 3600.0) // км/ч
+        }
+        tvMaxSpeed.text = "Макс: %02.0f км/ч".format(maxSpeed)
+        tvAvgSpeed.text = "Сред: %02.0f км/ч".format(avgSpeed)
     }
 
     private fun startTimer() {
@@ -261,13 +278,16 @@ class MainActivity : AppCompatActivity() {
                 hybridCalculator.reset()
                 startTime = 0L
                 calories = 0
+                maxSpeed = 0.0
+                avgSpeed = 0.0
                 updateUI()
 
                 // Анимация появления
                 val fadeIn = AnimationUtils.loadAnimation(this@MainActivity, R.anim.fade_in_fast)
                 tvDistance.startAnimation(fadeIn)
                 tvTime.startAnimation(fadeIn)
-                tvCalories.startAnimation(fadeIn)
+                tvMaxSpeed.startAnimation(fadeIn)
+                tvAvgSpeed.startAnimation(fadeIn)
             }
 
             override fun onAnimationRepeat(animation: Animation?) {}
@@ -275,6 +295,7 @@ class MainActivity : AppCompatActivity() {
 
         tvDistance.startAnimation(fadeOut)
         tvTime.startAnimation(fadeOut)
-        tvCalories.startAnimation(fadeOut)
+        tvMaxSpeed.startAnimation(fadeOut)
+        tvAvgSpeed.startAnimation(fadeOut)
     }
 }

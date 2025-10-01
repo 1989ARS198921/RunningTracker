@@ -118,4 +118,36 @@ class RunDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
         db.delete(TABLE_NAME, null, null) // Удаляет все записи
         db.close()
     }
+    // В файле data/database/RunDatabase.kt
+
+    fun getDistanceByDays(days: Int = 7): List<Double> {
+        val db = readableDatabase
+        val result = mutableListOf<Double>()
+        val calendar = Calendar.getInstance()
+
+        for (i in 0 until days) {
+            calendar.add(Calendar.DAY_OF_MONTH, -1)
+            val startOfDay = calendar.timeInMillis
+            val endOfDay = startOfDay + (24 * 60 * 60 * 1000L) - 1 // Конец дня
+
+            val cursor = db.query(
+                TABLE_NAME,
+                arrayOf("SUM($COL_DISTANCE) AS total_distance"),
+                "$COL_TIMESTAMP BETWEEN ? AND ?",
+                arrayOf(startOfDay.toString(), endOfDay.toString()),
+                null, null, null
+            )
+
+            var distance = 0.0
+            cursor.use {
+                if (it.moveToFirst()) {
+                    distance = it.getDouble(0)
+                }
+            }
+            result.add(0, distance) // Добавляем в начало, чтобы даты шли по возрастанию
+            calendar.add(Calendar.DAY_OF_MONTH, 1) // Вернуть к текущему дню
+        }
+
+        return result
+    }
 }
