@@ -1,25 +1,18 @@
+// File: app/src/main/java/com/example/runningtracker/ui/main/MainActivity.kt
 package com.example.runningtracker.ui.main
 
 import android.Manifest
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
-import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.animation.Animation
 import android.view.animation.AnimationUtils
-import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -59,33 +52,35 @@ class MainActivity : AppCompatActivity() {
     private var avgSpeed = 0.0
     private val weight = 70f // вес в кг
 
-    private var stepCount = 0
-    private var stepSensor: Sensor? = null
-    private var stepCounter: SensorEventListener? = null
     private lateinit var hybridCalculator: HybridDistanceCalculator
 
-    private val locationListener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            hybridCalculator.addGpsLocation(location)
-            updateUI()
-        }
-
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-        override fun onProviderEnabled(provider: String) {}
-        override fun onProviderDisabled(provider: String) {}
-    }
-
-    private val locationUpdateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            updateUI()
-        }
-    }
+    // --- ДОБАВЛЕНО: SharedPreferences ---
+    private lateinit var sharedPreferences: SharedPreferences
+    private val PREFS_NAME = "TrackingPrefs"
+    private val DISTANCE_KEY = "current_distance"
+    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
 
     private lateinit var db: RunDatabase
+
+    // --- ДОБАВЛЕНО: Handler и Runnable для периодического обновления ---
+    private val handler = Handler(Looper.getMainLooper())
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            if (isTracking) {
+                updateUIFromSharedPrefs() // --- ВЫЗОВ НОВОГО МЕТОДА ---
+                handler.postDelayed(this, 1000) // Обновляем каждую секунду
+            }
+        }
+    }
+    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // --- ДОБАВЛЕНО: инициализация SharedPreferences ---
+        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
 
         initViews()
         db = RunDatabase(this)
@@ -153,6 +148,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startTracking() {
+        Log.d("MainActivity", "startTracking вызван")
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
@@ -165,6 +161,7 @@ class MainActivity : AppCompatActivity() {
 
         val intent = Intent(this, TrackingService::class.java)
         startService(intent)
+        Log.d("MainActivity", "TrackingService запущен")
 
         isTracking = true
         startTime = System.currentTimeMillis()
@@ -172,21 +169,24 @@ class MainActivity : AppCompatActivity() {
         setButtonEnabled(btnStop, true)
         setButtonEnabled(btnSave, false)
 
+        Log.d("MainActivity", "requestLocationUpdates НЕ вызван в MainActivity")
+
         startTimer()
+        // --- ДОБАВЛЕНО: запуск обновления из SharedPreferences ---
+        handler.post(updateRunnable)
+        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
     }
 
     private fun stopTracking() {
+        Log.d("MainActivity", "stopTracking вызван")
         val intent = Intent(this, TrackingService::class.java)
         stopService(intent)
-
-        locationManager.removeUpdates(locationListener)
-
-        stepSensor?.let {
-            val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-            sensorManager.unregisterListener(stepCounter, it)
-        }
+        Log.d("MainActivity", "TrackingService остановлен")
 
         isTracking = false
+        // --- ДОБАВЛЕНО: остановка обновления из SharedPreferences ---
+        handler.removeCallbacks(updateRunnable)
+        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
         setButtonEnabled(btnStart, true)
         setButtonEnabled(btnStop, false)
         setButtonEnabled(btnSave, true)
@@ -195,28 +195,42 @@ class MainActivity : AppCompatActivity() {
         updateUI()
     }
 
-    private fun initStepCounter() {
-        val sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+    // --- ДОБАВЛЕНО: метод для обновления UI из SharedPreferences ---
+    private fun updateUIFromSharedPrefs() {
+        val distance = sharedPreferences.getFloat(DISTANCE_KEY, 0f).toDouble()
+        Log.d("MainActivity", "updateUIFromSharedPrefs вызван, расстояние из SharedPreferences: $distance")
+        // Используем расстояние из SharedPreferences
+        val distanceKm = (distance * 1000).toInt() // в метрах
+        val km = distanceKm / 1000
+        val meters = distanceKm % 1000
+        tvDistance.text = "Диста: %02d км %03d м".format(km, meters)
 
-        stepCounter = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent?) {
-                if (event != null) {
-                    val newStepCount = event.values[0].toInt()
-                    hybridCalculator.updateSteps(newStepCount)
-                    updateUI()
-                }
-            }
+        // Обновляем остальные UI элементы (время, калории, скорости)
+        val elapsed = System.currentTimeMillis() - startTime
+        val seconds = (elapsed / 1000).toInt()
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        val sec = seconds % 60
+        val min = minutes % 60
 
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        val timeStr = "Время: %02d:%02d:%02d".format(hours, min, sec)
+        tvTime.text = timeStr
+
+        calories = (distance * Constants.CALORIES_PER_KM).roundToInt()
+
+        if (elapsed > 0) {
+            avgSpeed = distance / (elapsed / 1000.0 / 3600.0) // км/ч
         }
+        tvMaxSpeed.text = "Макс: %02.0f км/ч".format(maxSpeed)
+        tvAvgSpeed.text = "Сред: %02.0f км/ч".format(avgSpeed)
 
-        stepSensor?.let {
-            sensorManager.registerListener(stepCounter, it, SensorManager.SENSOR_DELAY_UI)
-        }
+        Log.d("MainActivity", "UI обновлен из SharedPreferences, расстояние: $distance")
     }
+    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
 
     private fun updateUI() {
+        Log.d("MainActivity", "updateUI вызван (локальное обновление)")
+        // Используем локальное расстояние, если broadcast не приходит или не содержит данных
         val distance = hybridCalculator.getTotalDistance()
         val distanceKm = (distance * 1000).toInt() // в метрах
         val km = distanceKm / 1000
@@ -241,6 +255,8 @@ class MainActivity : AppCompatActivity() {
         }
         tvMaxSpeed.text = "Макс: %02.0f км/ч".format(maxSpeed)
         tvAvgSpeed.text = "Сред: %02.0f км/ч".format(avgSpeed)
+
+        Log.d("MainActivity", "UI обновлен локально, расстояние: $distance")
     }
 
     private fun startTimer() {
@@ -248,7 +264,18 @@ class MainActivity : AppCompatActivity() {
         val runnable = object : Runnable {
             override fun run() {
                 if (isTracking) {
-                    updateUI()
+                    Log.d("MainActivity", "Таймер обновления UI (только время)")
+                    // Таймер обновляет только время, если расстояние приходит от сервиса
+                    // Обновляем UI, чтобы время обновлялось
+                    val elapsed = System.currentTimeMillis() - startTime
+                    val seconds = (elapsed / 1000).toInt()
+                    val minutes = seconds / 60
+                    val hours = minutes / 60
+                    val sec = seconds % 60
+                    val min = minutes % 60
+
+                    val timeStr = "Время: %02d:%02d:%02d".format(hours, min, sec)
+                    tvTime.text = timeStr
                     handler.postDelayed(this, 1000)
                 }
             }
@@ -257,9 +284,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveRun() {
+        val distanceToSave = sharedPreferences.getFloat(DISTANCE_KEY, 0f).toDouble() // Используем расстояние из SharedPreferences
         val run = Run(
-            distance = hybridCalculator.getTotalDistance(),
-            time = tvTime.text.toString().substring(6),
+            distance = distanceToSave,
+            time = tvTime.text.toString().substring(6), // Извлекаем только время
             calories = calories
         )
         db.addRun(run)
@@ -307,11 +335,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        registerReceiver(locationUpdateReceiver, IntentFilter("LOCATION_UPDATE"), Context.RECEIVER_NOT_EXPORTED)
+        // Более не используем BroadcastReceiver
+        Log.d("MainActivity", "onResume")
     }
 
     override fun onPause() {
         super.onPause()
-        unregisterReceiver(locationUpdateReceiver)
+        // Более не используем BroadcastReceiver
+        Log.d("MainActivity", "onPause")
     }
 }
