@@ -54,15 +54,16 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var hybridCalculator: HybridDistanceCalculator
 
-    // --- ДОБАВЛЕНО: SharedPreferences ---
+    // --- ИЗМЕНЕНО: SharedPreferences и ключи ---
     private lateinit var sharedPreferences: SharedPreferences
     private val PREFS_NAME = "TrackingPrefs"
     private val DISTANCE_KEY = "current_distance"
-    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+    private val STEPS_KEY = "current_steps" // <-- ДОБАВЛЕНО
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     private lateinit var db: RunDatabase
 
-    // --- ДОБАВЛЕНО: Handler и Runnable для периодического обновления ---
+    // --- ИЗМЕНЕНО: Handler и Runnable для периодического обновления ---
     private val handler = Handler(Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -72,20 +73,22 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // --- ДОБАВЛЕНО: инициализация SharedPreferences ---
+        // --- ИЗМЕНЕНО: инициализация SharedPreferences ---
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
         initViews()
         db = RunDatabase(this)
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        hybridCalculator = HybridDistanceCalculator(stepLength = 0.75)
+        // hybridCalculator больше не используется для расчёта дистанции в UI при использовании SharedPreferences
+        // Но может использоваться для других целей или как резервный вариант
+        // hybridCalculator = HybridDistanceCalculator(stepLength = 0.75) // Можно закомментировать, если не используется
 
         // Анимации кнопок
         btnStart.setOnClickListener {
@@ -172,9 +175,9 @@ class MainActivity : AppCompatActivity() {
         Log.d("MainActivity", "requestLocationUpdates НЕ вызван в MainActivity")
 
         startTimer()
-        // --- ДОБАВЛЕНО: запуск обновления из SharedPreferences ---
+        // --- ИЗМЕНЕНО: запуск обновления из SharedPreferences ---
         handler.post(updateRunnable)
-        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
     }
 
     private fun stopTracking() {
@@ -184,9 +187,9 @@ class MainActivity : AppCompatActivity() {
         Log.d("MainActivity", "TrackingService остановлен")
 
         isTracking = false
-        // --- ДОБАВЛЕНО: остановка обновления из SharedPreferences ---
+        // --- ИЗМЕНЕНО: остановка обновления из SharedPreferences ---
         handler.removeCallbacks(updateRunnable)
-        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
         setButtonEnabled(btnStart, true)
         setButtonEnabled(btnStop, false)
         setButtonEnabled(btnSave, true)
@@ -195,9 +198,10 @@ class MainActivity : AppCompatActivity() {
         updateUI()
     }
 
-    // --- ДОБАВЛЕНО: метод для обновления UI из SharedPreferences ---
+    // --- ИЗМЕНЕНО: метод для обновления UI из SharedPreferences ---
     private fun updateUIFromSharedPrefs() {
         val distance = sharedPreferences.getFloat(DISTANCE_KEY, 0f).toDouble()
+        // val steps = sharedPreferences.getInt(STEPS_KEY, 0) // <-- ЧИТАЕМ ШАГИ, если нужно отображать в UI
         Log.d("MainActivity", "updateUIFromSharedPrefs вызван, расстояние из SharedPreferences: $distance")
         // Используем расстояние из SharedPreferences
         val distanceKm = (distance * 1000).toInt() // в метрах
@@ -226,12 +230,13 @@ class MainActivity : AppCompatActivity() {
 
         Log.d("MainActivity", "UI обновлен из SharedPreferences, расстояние: $distance")
     }
-    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     private fun updateUI() {
         Log.d("MainActivity", "updateUI вызван (локальное обновление)")
         // Используем локальное расстояние, если broadcast не приходит или не содержит данных
-        val distance = hybridCalculator.getTotalDistance()
+        // или если не используется SharedPreferences для обновления во время трекинга
+        val distance = sharedPreferences.getFloat(DISTANCE_KEY, 0f).toDouble() // Используем SharedPreferences для обновления в конце
         val distanceKm = (distance * 1000).toInt() // в метрах
         val km = distanceKm / 1000
         val meters = distanceKm % 1000
@@ -285,10 +290,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveRun() {
         val distanceToSave = sharedPreferences.getFloat(DISTANCE_KEY, 0f).toDouble() // Используем расстояние из SharedPreferences
+        val stepsToSave = sharedPreferences.getInt(STEPS_KEY, 0) // <-- ЧИТАЕМ ШАГИ
         val run = Run(
             distance = distanceToSave,
             time = tvTime.text.toString().substring(6), // Извлекаем только время
-            calories = calories
+            calories = calories,
+            steps = stepsToSave // <-- ПЕРЕДАЁМ ШАГИ В МОДЕЛЬ
         )
         db.addRun(run)
 
@@ -309,7 +316,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onAnimationEnd(animation: Animation?) {
                 // Обнуляем значения
-                hybridCalculator.reset()
+                // hybridCalculator.reset() // Больше не используется для UI при использовании SharedPreferences
                 startTime = 0L
                 calories = 0
                 maxSpeed = 0.0

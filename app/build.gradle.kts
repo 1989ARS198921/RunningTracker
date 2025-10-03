@@ -1,6 +1,10 @@
+// File: app/build.gradle.kts
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    // --- ДОБАВЛЕНО: плагин для kapt (Kotlin Annotation Processing Tool) ---
+    id("kotlin-kapt") // <-- Эта строка добавлена
+    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
 }
 
 android {
@@ -47,4 +51,11 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // --- ДОБАВЛЕНО: зависимости для Room ---
+    val roomVersion = "2.6.1" // Рекомендуется использовать последнюю стабильную версию
+
+    implementation("androidx.room:room-runtime:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion") // Компилятор для Room
+    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
 }
